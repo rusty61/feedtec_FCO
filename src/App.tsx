@@ -88,7 +88,8 @@ function App() {
       case 'costs':
         return (
           <div className="space-y-6">
-            {/* Cost Analysis Header with Pen Selector and Feed Cost Input */}
+            {/*
+            Temporarily commented out to isolate JSX error.
             <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <h2 className="text-2xl font-bold text-gray-900">Cost Analysis</h2>
@@ -135,9 +136,16 @@ function App() {
                 </button>
               </div>
             </div>
+            */}
 
-            <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="bg-white rounded-xl shadow-lg p-6"> {/* This is now the first direct child if the above is commented out */}
               <div className="flex items-center justify-between mb-6">
+                {/* If the above block was the issue, there should be a title here.
+                    For now, to make sure the structure is minimal, let's add a placeholder title
+                    if the original title was inside the commented block.
+                    The original Cost Analysis h2 was inside the commented block.
+                */}
+                <h2 className="text-2xl font-bold text-gray-900">Cost Analysis (Data)</h2>
                 <h3 className="text-lg font-semibold text-gray-900">
                   Cost Breakdown - {selectedCostData?.penName || 'No Data'}
                 </h3>
