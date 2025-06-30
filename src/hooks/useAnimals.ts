@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Animal, FCOData, DashboardStats, WeightRecord, SupplementCost, PenCostBreakdown } from '../types';
 
-export const useAnimals = () => {
+export const useAnimals = (feedCostPerKg: number) => {
   const [animals, setAnimals] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -559,22 +559,140 @@ export const useAnimals = () => {
     };
   };
 
-  const getDashboardStats = (): DashboardStats => {
+  const calculateAndMemoizeFCO = useMemo(() => {
+    // This internal function will be updated in the next step to use feedCostPerKg
+    const calculateFCOInternal = (animal: Animal): FCOData => {
+      const totalFeedConsumed = animal.feedData.reduce((sum, feed) => sum + feed.amount, 0);
+      const totalWeightGain = animal.animalCount * (animal.currentWeightPerAnimal - animal.entryWeightPerAnimal);
+      const weightGainPerAnimal = animal.currentWeightPerAnimal - animal.entryWeightPerAnimal;
+
+      const sortedWeightRecords = [...animal.weightRecords].sort((a, b) =>
+        new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      const latestWeightRecord = sortedWeightRecords[sortedWeightRecords.length - 1];
+      const previousWeightRecord = sortedWeightRecords[sortedWeightRecords.length - 2];
+
+      const latestWeightDate = latestWeightRecord?.date || animal.startDate;
+      const daysSinceLastWeighing = previousWeightRecord ?
+        Math.floor((new Date(latestWeightDate).getTime() - new Date(previousWeightRecord.date).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+      const weightGainSinceLastWeighing = previousWeightRecord ?
+        (latestWeightRecord.weightPerAnimal - previousWeightRecord.weightPerAnimal) : 0;
+
+      const startDate = new Date(animal.startDate);
+      const currentDate = animal.finishDate ? new Date(animal.finishDate) : new Date(latestWeightDate);
+      const daysOnFeed = Math.floor((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const dailyGainPerAnimal = daysOnFeed > 0 ? weightGainPerAnimal / daysOnFeed : 0;
+      const currentFCO = totalWeightGain > 0 ? totalFeedConsumed / totalWeightGain : 0;
+      const feedEfficiency = currentFCO > 0 ? 1 / currentFCO : 0;
+
+      // Calculate feed cost using the new feedCostPerKg
+      const calculatedFeedCost = totalFeedConsumed * feedCostPerKg;
+      const totalSupplementCost = animal.supplementCosts.reduce((sum, supplement) => sum + supplement.totalCost, 0);
+      // Assuming other costs are still sourced from costData if they exist (e.g., medical, equipment)
+      const otherNonFeedNonSupplementCosts = animal.costData
+        .filter(c => c.type !== 'feed' && c.type !== 'supplement')
+        .reduce((sum, c) => sum + c.amount, 0);
+
+      const totalCost = calculatedFeedCost + totalSupplementCost + otherNonFeedNonSupplementCosts;
+
+      const costPerKg = totalWeightGain > 0 ? totalCost / totalWeightGain : 0;
+      const costPerAnimal = animal.animalCount > 0 ? totalCost / animal.animalCount : 0;
+      const supplementCostPerAnimal = animal.animalCount > 0 ? totalSupplementCost / animal.animalCount : 0;
+      const supplementCostPerKg = totalWeightGain > 0 ? totalSupplementCost / totalWeightGain : 0;
+
+      return {
+        animalId: animal.id,
+        penName: animal.penName,
+        animalCount: animal.animalCount,
+        currentFCO,
+        totalFeedConsumed,
+        totalWeightGain,
+        weightGainPerAnimal,
+        daysOnFeed,
+        dailyGainPerAnimal,
+        feedEfficiency,
+        totalCost, // Will be updated
+        costPerKg, // Will be updated
+        costPerAnimal, // Will be updated
+        latestWeightDate,
+        weightGainSinceLastWeighing,
+        daysSinceLastWeighing,
+        totalSupplementCost,
+        supplementCostPerAnimal,
+        supplementCostPerKg
+      };
+    };
+    return animals.map(calculateFCOInternal);
+  }, [animals, feedCostPerKg]); // Add feedCostPerKg to dependency array
+
+  const getPenCostBreakdown = useMemo(() => (animalId: string): PenCostBreakdown | null => {
+    const animal = animals.find(a => a.id === animalId);
+    if (!animal) return null;
+
+    // Placeholder for feed cost calculation - will be updated
+    const feedCosts = animal.feedData.reduce((sum, feed) => sum + (feed.amount * feedCostPerKg), 0); // Tentative update
+    const supplementCosts = animal.supplementCosts.reduce((sum, s) => sum + s.totalCost, 0);
+    const medicalCosts = animal.costData.filter(c => c.type === 'medical').reduce((sum, c) => sum + c.amount, 0);
+    const equipmentCosts = animal.costData.filter(c => c.type === 'equipment').reduce((sum, c) => sum + c.amount, 0);
+    const otherCosts = animal.costData.filter(c => c.type === 'other').reduce((sum, c) => sum + c.amount, 0);
+    const totalCosts = feedCosts + supplementCosts + medicalCosts + equipmentCosts + otherCosts;
+
+    const totalWeightGain = animal.animalCount * (animal.currentWeightPerAnimal - animal.entryWeightPerAnimal);
+    const costPerAnimal = animal.animalCount > 0 ? totalCosts / animal.animalCount : 0;
+    const costPerKgGained = totalWeightGain > 0 ? totalCosts / totalWeightGain : 0;
+
+    const supplementBreakdown = animal.supplementCosts.reduce((acc, supplement) => {
+      const existing = acc.find(item => item.category === supplement.category);
+      if (existing) {
+        existing.cost += supplement.totalCost;
+      } else {
+        acc.push({
+          category: supplement.category,
+          cost: supplement.totalCost,
+          percentage: 0
+        });
+      }
+      return acc;
+    }, [] as { category: string; cost: number; percentage: number }[]);
+
+    supplementBreakdown.forEach(item => {
+      item.percentage = supplementCosts > 0 ? (item.cost / supplementCosts) * 100 : 0;
+    });
+
+    return {
+      penId: animal.id,
+      penName: animal.penName,
+      feedCosts, // Will be updated
+      supplementCosts,
+      medicalCosts,
+      equipmentCosts,
+      otherCosts,
+      totalCosts, // Will be updated
+      costPerAnimal, // Will be updated
+      costPerKgGained, // Will be updated
+      supplementBreakdown
+    };
+  }, [animals, feedCostPerKg]); // Add feedCostPerKg
+
+  const getDashboardStats = useMemo(() => (): DashboardStats => {
     const activePens = animals.filter(a => a.status === 'active');
-    const fcoData = animals.map(calculateFCO);
+    // Use the memoized fcoData (calculateAndMemoizeFCO)
+    const currentFcoData = calculateAndMemoizeFCO;
     
     return {
       totalPens: animals.length,
       totalAnimals: animals.reduce((sum, animal) => sum + animal.animalCount, 0),
       activePens: activePens.length,
       activeAnimals: activePens.reduce((sum, animal) => sum + animal.animalCount, 0),
-      averageFCO: fcoData.reduce((sum, data) => sum + data.currentFCO, 0) / animals.length || 0,
-      totalFeedConsumed: fcoData.reduce((sum, data) => sum + data.totalFeedConsumed, 0),
-      totalCost: fcoData.reduce((sum, data) => sum + data.totalCost, 0),
-      averageDailyGainPerAnimal: fcoData.reduce((sum, data) => sum + data.dailyGainPerAnimal, 0) / animals.length || 0,
-      totalWeightGain: fcoData.reduce((sum, data) => sum + data.totalWeightGain, 0)
+      averageFCO: currentFcoData.reduce((sum, data) => sum + data.currentFCO, 0) / animals.length || 0,
+      totalFeedConsumed: currentFcoData.reduce((sum, data) => sum + data.totalFeedConsumed, 0),
+      totalCost: currentFcoData.reduce((sum, data) => sum + data.totalCost, 0), // This will reflect new costs
+      averageDailyGainPerAnimal: currentFcoData.reduce((sum, data) => sum + data.dailyGainPerAnimal, 0) / animals.length || 0,
+      totalWeightGain: currentFcoData.reduce((sum, data) => sum + data.totalWeightGain, 0)
     };
-  };
+  }, [animals, calculateAndMemoizeFCO, feedCostPerKg]); // Added feedCostPerKg and calculateAndMemoizeFCO
 
   return {
     animals,
@@ -584,9 +702,9 @@ export const useAnimals = () => {
     deleteAnimal,
     addWeightRecord,
     addSupplementCost,
-    calculateFCO,
-    getPenCostBreakdown,
-    getDashboardStats,
-    fcoData: animals.map(calculateFCO)
+    // calculateFCO is now internal to calculateAndMemoizeFCO
+    getPenCostBreakdown, // This is now a memoized function
+    getDashboardStats,   // This is now a memoized function
+    fcoData: calculateAndMemoizeFCO // Export the memoized FCO data
   };
 };

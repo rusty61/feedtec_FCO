@@ -12,6 +12,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [selectedCostPenId, setSelectedCostPenId] = useState<string>('all');
   const [showSupplementForm, setShowSupplementForm] = useState(false);
+  const [feedCostPerKg, setFeedCostPerKg] = useState<number>(0.25); // Defaulting to $0.25 per kg
   
   const {
     animals,
@@ -24,7 +25,7 @@ function App() {
     getDashboardStats,
     getPenCostBreakdown,
     fcoData
-  } = useAnimals();
+  } = useAnimals(feedCostPerKg); // Pass feedCostPerKg to the hook
 
   const tabs = [
     { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
@@ -87,14 +88,30 @@ function App() {
       case 'costs':
         return (
           <div className="space-y-6">
-            {/* Cost Analysis Header with Pen Selector */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">Cost Analysis</h2>
-              <div className="flex items-center space-x-4">
-                <div className="relative">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Pen</label>
+            {/* Cost Analysis Header with Pen Selector and Feed Cost Input */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <h2 className="text-2xl font-bold text-gray-900">Cost Analysis</h2>
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <label htmlFor="feedCost" className="block text-sm font-medium text-gray-700 mb-1">
+                      Feed Cost ($/kg)
+                    </label>
+                    <input
+                      type="number"
+                      id="feedCost"
+                      name="feedCost"
+                      value={feedCostPerKg}
+                      onChange={(e) => setFeedCostPerKg(parseFloat(e.target.value) || 0)}
+                      className="appearance-none bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent w-32"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
                   <div className="relative">
-                    <select
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Pen</label>
+                    <div className="relative">
+                      <select
                       value={selectedCostPenId}
                       onChange={(e) => setSelectedCostPenId(e.target.value)}
                       className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-700 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent min-w-[150px]"
